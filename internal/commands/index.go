@@ -23,13 +23,19 @@ func NewRouter(store *storage.Store) *Router {
 	return &Router{
 		store: store,
 		commands: map[string]Command{
-			"PING": {handler: func(_ *storage.Store, a []any) any {
-				return Ping(a)
-			}, minArgs: 0, maxArgs: 1},
+			"PING":  {handler: Ping, minArgs: 0, maxArgs: 1},
+			"SET":   {handler: Set, minArgs: 2, maxArgs: 2},
+			"GET":   {handler: Get, minArgs: 1, maxArgs: 1},
 
-			"SET": {handler: Set, minArgs: 2, maxArgs: 2},
-			"GET": {handler: Get, minArgs: 1, maxArgs: 1},
+			"LPUSH": {handler: LPUSH, minArgs: 2, maxArgs: -1},
+			"RPUSH": {handler: RPUSH, minArgs: 2, maxArgs: -1},
+			"LLEN":  {handler: LLEN, minArgs: 1, maxArgs: 1},
+			"LRANGE":{handler: LRANGE, minArgs: 3, maxArgs: 3},
+			"LREM":  {handler: LREM, minArgs: 3, maxArgs: 3},
+
+			"BLPOP": {handler: BLPOP, minArgs: 2, maxArgs: -1},
 		},
+
 	}
 }
 
