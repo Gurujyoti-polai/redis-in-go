@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"fmt"
+	"time"
 )
 
 type ValueType int
@@ -319,11 +321,6 @@ func IsNewerID(newMs, newSeq, lastMs, lastSeq int64) bool {
 
 
 func (s *Store) AddStreamEntry(key string, id string, fields map[string]string) (string, bool) {
-	newMs, newSeq, ok := ValidateStreamID(id)
-	if !ok {
-		return "", false
-	}
-
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 
@@ -332,17 +329,7 @@ func (s *Store) AddStreamEntry(key string, id string, fields map[string]string) 
 		return "", false
 	}
 
-	// If stream exists, enforce monotonic IDs
-	if exists && len(entry.streamVal) > 0 {
-		last := entry.streamVal[len(entry.streamVal)-1]
-		lastMs, lastSeq, _ := ValidateStreamID(last.ID)
-
-		if !IsNewerID(newMs, newSeq, lastMs, lastSeq) {
-			// newID <= lastID → reject
-			return "", false
-		}
-	}
-
+	// Initialize stream if needed
 	if !exists {
 		entry = Entry{
 			ValueType: TypeStream,
@@ -350,6 +337,43 @@ func (s *Store) AddStreamEntry(key string, id string, fields map[string]string) 
 		}
 	}
 
+	// ---------- AUTO ID (*) ----------
+	if id == "*" {
+		nowMs := time.Now().UnixMilli()
+		seq := int64(0)
+
+		if len(entry.streamVal) > 0 {
+			last := entry.streamVal[len(entry.streamVal)-1]
+			lastMs, lastSeq, _ := ValidateStreamID(last.ID)
+
+			if nowMs == lastMs {
+				seq = lastSeq + 1
+			} else if nowMs < lastMs {
+				nowMs = lastMs
+				seq = lastSeq + 1
+			}
+		}
+
+		id = fmt.Sprintf("%d-%d", nowMs, seq)
+	}
+
+	// ---------- EXPLICIT ID ----------
+	newMs, newSeq, ok := ValidateStreamID(id)
+	if !ok {
+		return "", false
+	}
+
+	// ---------- ORDER ENFORCEMENT ----------
+	if len(entry.streamVal) > 0 {
+		last := entry.streamVal[len(entry.streamVal)-1]
+		lastMs, lastSeq, _ := ValidateStreamID(last.ID)
+
+		if !IsNewerID(newMs, newSeq, lastMs, lastSeq) {
+			return "", false
+		}
+	}
+
+	// ---------- APPEND ----------
 	entry.streamVal = append(entry.streamVal, StreamEntry{
 		ID:     id,
 		Fields: fields,
