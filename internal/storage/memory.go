@@ -405,10 +405,24 @@ func ValidateStreamID(id string) (int64, int64, bool) {
 }
 
 func (s *Store) RangeStream(key string, startID string, endID string) ([]StreamEntry, bool) {
-	startMs, startSeq, ok := ValidateStreamID(startID)
-	if !ok {
-		return nil, false
+	var (
+		startMs, startSeq int64
+		hasStart          bool
+	)
+
+	// Handle start
+	if startID == "-" {
+		hasStart = false // means: no lower bound
+	} else {
+		var ok bool
+		startMs, startSeq, ok = ValidateStreamID(startID)
+		if !ok {
+			return nil, false
+		}
+		hasStart = true
 	}
+
+	// Handle end (still mandatory for now)
 	endMs, endSeq, ok := ValidateStreamID(endID)
 	if !ok {
 		return nil, false
@@ -422,19 +436,21 @@ func (s *Store) RangeStream(key string, startID string, endID string) ([]StreamE
 		return []StreamEntry{}, true
 	}
 	if entry.ValueType != TypeStream {
-		return nil, false // WRONGTYPE
+		return nil, false
 	}
 
 	result := []StreamEntry{}
 	for _, e := range entry.streamVal {
 		ms, seq, _ := ValidateStreamID(e.ID)
 
-		// e.ID >= startID ?
-		if !IsNewerID(ms, seq, startMs, startSeq) && !(ms == startMs && seq == startSeq) {
-			continue
+		// Lower bound check (skip if start == "-")
+		if hasStart {
+			if !IsNewerID(ms, seq, startMs, startSeq) && !(ms == startMs && seq == startSeq) {
+				continue
+			}
 		}
 
-		// e.ID <= endID ?
+		// Upper bound check (inclusive)
 		if IsNewerID(ms, seq, endMs, endSeq) {
 			continue
 		}
@@ -444,3 +460,4 @@ func (s *Store) RangeStream(key string, startID string, endID string) ([]StreamE
 
 	return result, true
 }
+
