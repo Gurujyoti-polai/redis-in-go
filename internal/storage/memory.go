@@ -3,6 +3,8 @@ package storage
 // memory.go
 
 import (
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -305,14 +307,40 @@ func (s *Store) TypeOf(key string) string {
 	}
 }
 
+func IsNewerID(newMs, newSeq, lastMs, lastSeq int64) bool {
+	if newMs > lastMs {
+		return true
+	}
+	if newMs == lastMs && newSeq > lastSeq {
+		return true
+	}
+	return false
+}
+
+
 func (s *Store) AddStreamEntry(key string, id string, fields map[string]string) (string, bool) {
+	newMs, newSeq, ok := ValidateStreamID(id)
+	if !ok {
+		return "", false
+	}
+
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 
 	entry, exists := s.data[key]
-
 	if exists && entry.ValueType != TypeStream {
-		return "", false // WRONGTYPE
+		return "", false
+	}
+
+	// If stream exists, enforce monotonic IDs
+	if exists && len(entry.streamVal) > 0 {
+		last := entry.streamVal[len(entry.streamVal)-1]
+		lastMs, lastSeq, _ := ValidateStreamID(last.ID)
+
+		if !IsNewerID(newMs, newSeq, lastMs, lastSeq) {
+			// newID <= lastID → reject
+			return "", false
+		}
 	}
 
 	if !exists {
@@ -329,4 +357,25 @@ func (s *Store) AddStreamEntry(key string, id string, fields map[string]string) 
 
 	s.data[key] = entry
 	return id, true
+}
+
+
+func ValidateStreamID(id string) (int64, int64, bool) {
+	parts := strings.Split(id, "-")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+
+	ms, err1 := strconv.ParseInt(parts[0], 10, 64)
+	seq, err2 := strconv.ParseInt(parts[1], 10, 64)
+
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+
+	if ms < 0 || seq < 0 {
+		return 0, 0, false
+	}
+
+	return ms, seq, true
 }
