@@ -11,6 +11,7 @@ type ValueType int
 const (
 	TypeString ValueType=iota
 	TypeList
+	TypeStream
 )
 
 type BlockedClient struct {
@@ -18,11 +19,19 @@ type BlockedClient struct {
 	Ch   chan []any
 }
 
+type StreamEntry struct {
+	ID     string
+	Fields map[string]string
+}
 
 type Entry struct {
 	ValueType ValueType
 	stringVal string
 	listVal   []string
+
+	streamVal []StreamEntry   // ← NEW
+
+	lastID string 
 	expiresAt int64 // unix timestamp in ms, 0 = no expiry
 }
 
@@ -273,4 +282,51 @@ func (s *Store) TryLPop(key string) (any, bool, bool) {
 	entry.listVal = entry.listVal[1:]
 	s.data[key] = entry
 	return val, true, false
+}
+
+func (s *Store) TypeOf(key string) string {
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+
+	entry, exists := s.data[key]
+	if !exists {
+		return "none"
+	}
+
+	switch entry.ValueType {
+	case TypeString:
+		return "string"
+	case TypeList:
+		return "list"
+	case TypeStream:
+		return "stream"
+	default:
+		return "none"
+	}
+}
+
+func (s *Store) AddStreamEntry(key string, id string, fields map[string]string) (string, bool) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+
+	entry, exists := s.data[key]
+
+	if exists && entry.ValueType != TypeStream {
+		return "", false // WRONGTYPE
+	}
+
+	if !exists {
+		entry = Entry{
+			ValueType: TypeStream,
+			streamVal: []StreamEntry{},
+		}
+	}
+
+	entry.streamVal = append(entry.streamVal, StreamEntry{
+		ID:     id,
+		Fields: fields,
+	})
+
+	s.data[key] = entry
+	return id, true
 }
