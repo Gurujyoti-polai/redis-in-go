@@ -407,12 +407,14 @@ func ValidateStreamID(id string) (int64, int64, bool) {
 func (s *Store) RangeStream(key string, startID string, endID string) ([]StreamEntry, bool) {
 	var (
 		startMs, startSeq int64
+		endMs, endSeq     int64
 		hasStart          bool
+		hasEnd            bool
 	)
 
 	// Handle start
 	if startID == "-" {
-		hasStart = false // means: no lower bound
+		hasStart = false
 	} else {
 		var ok bool
 		startMs, startSeq, ok = ValidateStreamID(startID)
@@ -422,10 +424,16 @@ func (s *Store) RangeStream(key string, startID string, endID string) ([]StreamE
 		hasStart = true
 	}
 
-	// Handle end (still mandatory for now)
-	endMs, endSeq, ok := ValidateStreamID(endID)
-	if !ok {
-		return nil, false
+	// Handle end
+	if endID == "+" {
+		hasEnd = false
+	} else {
+		var ok bool
+		endMs, endSeq, ok = ValidateStreamID(endID)
+		if !ok {
+			return nil, false
+		}
+		hasEnd = true
 	}
 
 	s.Mu.RLock()
@@ -443,16 +451,19 @@ func (s *Store) RangeStream(key string, startID string, endID string) ([]StreamE
 	for _, e := range entry.streamVal {
 		ms, seq, _ := ValidateStreamID(e.ID)
 
-		// Lower bound check (skip if start == "-")
+		// Lower bound (skip if start == "-")
 		if hasStart {
-			if !IsNewerID(ms, seq, startMs, startSeq) && !(ms == startMs && seq == startSeq) {
+			if !IsNewerID(ms, seq, startMs, startSeq) &&
+				!(ms == startMs && seq == startSeq) {
 				continue
 			}
 		}
 
-		// Upper bound check (inclusive)
-		if IsNewerID(ms, seq, endMs, endSeq) {
-			continue
+		// Upper bound (skip if end == "+")
+		if hasEnd {
+			if IsNewerID(ms, seq, endMs, endSeq) {
+				continue
+			}
 		}
 
 		result = append(result, e)
@@ -460,4 +471,5 @@ func (s *Store) RangeStream(key string, startID string, endID string) ([]StreamE
 
 	return result, true
 }
+
 
