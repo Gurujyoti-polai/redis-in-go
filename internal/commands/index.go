@@ -36,6 +36,7 @@ func NewRouter(store *storage.Store) *Router {
 			"BLPOP": {handler: BLPOP, minArgs: 2, maxArgs: -1},
 			"TYPE": {handler: TYPE, minArgs: 1, maxArgs: 1},
 			"XADD": {handler: XADD, minArgs: 4, maxArgs: -1},
+			"XRANGE": {handler: XRANGE, minArgs: 3, maxArgs: 3},
 		},
 
 	}

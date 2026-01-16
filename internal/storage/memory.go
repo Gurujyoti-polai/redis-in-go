@@ -3,10 +3,10 @@ package storage
 // memory.go
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
-	"fmt"
 	"time"
 )
 
@@ -402,4 +402,45 @@ func ValidateStreamID(id string) (int64, int64, bool) {
 	}
 
 	return ms, seq, true
+}
+
+func (s *Store) RangeStream(key string, startID string, endID string) ([]StreamEntry, bool) {
+	startMs, startSeq, ok := ValidateStreamID(startID)
+	if !ok {
+		return nil, false
+	}
+	endMs, endSeq, ok := ValidateStreamID(endID)
+	if !ok {
+		return nil, false
+	}
+
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
+
+	entry, exists := s.data[key]
+	if !exists {
+		return []StreamEntry{}, true
+	}
+	if entry.ValueType != TypeStream {
+		return nil, false // WRONGTYPE
+	}
+
+	result := []StreamEntry{}
+	for _, e := range entry.streamVal {
+		ms, seq, _ := ValidateStreamID(e.ID)
+
+		// e.ID >= startID ?
+		if !IsNewerID(ms, seq, startMs, startSeq) && !(ms == startMs && seq == startSeq) {
+			continue
+		}
+
+		// e.ID <= endID ?
+		if IsNewerID(ms, seq, endMs, endSeq) {
+			continue
+		}
+
+		result = append(result, e)
+	}
+
+	return result, true
 }
